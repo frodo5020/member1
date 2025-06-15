@@ -1,65 +1,96 @@
 from flask import Flask, request, jsonify
-from flask_cors import CORS
-import pymysql
-
-app = Flask(__name__)
+from flask_mysqldb import MySQL
+from flask_cors import CORS  
 CORS(app)
 
-db_config = {
-    "host": "db.frodo.local",
-    "user": "frodo",
-    "password": "Frodo5020!!",
-    "database": "frodo",
-    "cursorclass": pymysql.cursors.DictCursor
-}
+app = Flask(__name__)
 
-@app.route("/api/members", methods=["GET"])
+# MySQL config
+app.config['MYSQL_HOST'] = 'db.frodo.local'
+app.config['MYSQL_USER'] = 'frodo'
+app.config['MYSQL_PASSWORD'] = 'Frodo5020!!'
+app.config['MYSQL_DB'] = 'frodo'
+
+mysql = MySQL(app)
+
+@app.route('/api/members', methods=['GET'])
 def get_members():
+    cur = mysql.connection.cursor()
+    query = "SELECT * FROM members WHERE 1=1"
     filters = []
-    params = []
-    for field in ["id", "name", "gender", "age"]:
-        value = request.args.get(field)
-        if value:
-            filters.append(f"{field} = %s")
-            params.append(value)
 
-    where_clause = "WHERE " + " AND ".join(filters) if filters else ""
-    sql = f"SELECT * FROM members {where_clause}"
+    id = request.args.get('id')
+    name = request.args.get('name')
+    gender = request.args.get('gender')
+    age = request.args.get('age')
 
-    with pymysql.connect(**db_config) as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, params)
-            rows = cur.fetchall()
-    return jsonify(rows)
+    if id:
+        query += " AND id = %s"
+        filters.append(id)
+    if name:
+        query += " AND name LIKE %s"
+        filters.append(f"%{name}%")
+    if gender:
+        query += " AND gender = %s"
+        filters.append(gender)
+    if age:
+        query += " AND age = %s"
+        filters.append(age)
 
-@app.route("/api/members", methods=["POST"])
+    cur.execute(query, filters)
+    rows = cur.fetchall()
+    cur.close()
+
+    members = [
+        {"id": row[0], "name": row[1], "gender": row[2], "age": row[3]}
+        for row in rows
+    ]
+    return jsonify(members)
+
+@app.route('/api/members/<int:member_id>', methods=['GET'])
+def get_member(member_id):
+    cur = mysql.connection.cursor()
+    cur.execute("SELECT * FROM members WHERE id = %s", (member_id,))
+    row = cur.fetchone()
+    cur.close()
+    if row:
+        return jsonify({"id": row[0], "name": row[1], "gender": row[2], "age": row[3]})
+    return jsonify({"error": "Member not found"}), 404
+
+@app.route('/api/members', methods=['POST'])
 def create_member():
     data = request.get_json()
-    sql = "INSERT INTO members (id, name, gender, age) VALUES (%s, %s, %s, %s)"
-    with pymysql.connect(**db_config) as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, (data["id"], data["name"], data["gender"], data["age"]))
-            conn.commit()
-    return jsonify({"message": "created"}), 201
+    id = data.get('id')
+    name = data.get('name')
+    gender = data.get('gender')
+    age = data.get('age')
 
-@app.route("/api/members/<int:member_id>", methods=["PUT"])
+    cur = mysql.connection.cursor()
+    cur.execute("INSERT INTO members (id, name, gender, age) VALUES (%s, %s, %s, %s)", (id, name, gender, age))
+    mysql.connection.commit()
+    cur.close()
+    return jsonify({"message": "Member created"}), 201
+
+@app.route('/api/members/<int:member_id>', methods=['PUT'])
 def update_member(member_id):
     data = request.get_json()
-    sql = "UPDATE members SET name=%s, gender=%s, age=%s WHERE id=%s"
-    with pymysql.connect(**db_config) as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, (data["name"], data["gender"], data["age"], member_id))
-            conn.commit()
-    return jsonify({"message": "updated"})
+    name = data.get('name')
+    gender = data.get('gender')
+    age = data.get('age')
 
-@app.route("/api/members/<int:member_id>", methods=["DELETE"])
+    cur = mysql.connection.cursor()
+    cur.execute("UPDATE members SET name=%s, gender=%s, age=%s WHERE id=%s", (name, gender, age, member_id))
+    mysql.connection.commit()
+    cur.close()
+    return jsonify({"message": "Member updated"})
+
+@app.route('/api/members/<int:member_id>', methods=['DELETE'])
 def delete_member(member_id):
-    sql = "DELETE FROM members WHERE id=%s"
-    with pymysql.connect(**db_config) as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, (member_id,))
-            conn.commit()
-    return jsonify({"message": "deleted"})
+    cur = mysql.connection.cursor()
+    cur.execute("DELETE FROM members WHERE id=%s", (member_id,))
+    mysql.connection.commit()
+    cur.close()
+    return jsonify({"message": "Member deleted"})
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)

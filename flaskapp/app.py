@@ -1,6 +1,8 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, url_for, make_response
 from flask_mysqldb import MySQL
 from flask_cors import CORS  
+from pymysql.err import IntegrityError  # ID 중복 처리용
+
 app = Flask(__name__)
 CORS(app)                 
 
@@ -64,11 +66,19 @@ def create_member():
     gender = data.get('gender')
     age = data.get('age')
 
-    cur = mysql.connection.cursor()
-    cur.execute("INSERT INTO members (id, name, gender, age) VALUES (%s, %s, %s, %s)", (id, name, gender, age))
-    mysql.connection.commit()
-    cur.close()
-    return jsonify({"message": "Member created"}), 201
+    try:
+        cur = mysql.connection.cursor()
+        cur.execute("INSERT INTO members (id, name, gender, age) VALUES (%s, %s, %s, %s)", (id, name, gender, age))
+        mysql.connection.commit()
+        cur.close()
+    except IntegrityError as e:
+        if "Duplicate entry" in str(e):
+            return jsonify({"error": f"Member with ID {id} already exists"}), 409
+        return jsonify({"error": "Database error"}), 500
+
+    response = make_response(jsonify({"message": "Member created"}), 201)
+    response.headers["Location"] = url_for('get_member', member_id=id, _external=True)
+    return response
 
 @app.route('/api/members/<int:member_id>', methods=['PUT'])
 def update_member(member_id):

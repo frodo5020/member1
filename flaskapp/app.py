@@ -1,9 +1,8 @@
 from flask import Flask, request, jsonify
 from flask_mysqldb import MySQL
 from flask_cors import CORS  
-CORS(app)
-
 app = Flask(__name__)
+CORS(app)                 
 
 # MySQL config
 app.config['MYSQL_HOST'] = 'db.frodo.local'
